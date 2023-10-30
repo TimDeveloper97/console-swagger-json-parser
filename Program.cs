@@ -22,6 +22,18 @@ public class SchemaObjectConverter : JsonConverter<SchemaObject>
                 schemaObject.Ref = refToken.ToObject<string>();
             }
 
+            // get min and max
+            if (schemaObject.Type == "string")
+            {
+                schemaObject.Min = jObject.GetValue("minLength")?.Value<string>();
+                schemaObject.Max = jObject.GetValue("maxLength")?.Value<string>();
+            }
+            else
+            {
+                schemaObject.Min = jObject.GetValue("minimum")?.Value<string>();
+                schemaObject.Max = jObject.GetValue("maximum")?.Value<string>();
+            }
+
             if (jObject.TryGetValue("xml", out JToken xmlToken))
             {
                 schemaObject.Xml = xmlToken.ToObject<object>();
@@ -35,10 +47,10 @@ public class SchemaObjectConverter : JsonConverter<SchemaObject>
                 foreach (var pros in dicPros)
                 {
                     var pro = new Property();
-                    
+
                     // get field
                     var convert = pros.Value.ToObject<Property>();
-                    if(convert != null)
+                    if (convert != null)
                         pro = convert;
 
                     pro.Ref = pros.Value["$ref"]?.ToString();
@@ -50,7 +62,7 @@ public class SchemaObjectConverter : JsonConverter<SchemaObject>
                     {
                         //pro.Name = itemsToken["name"]?.ToObject<string>();
                         pro.Ref = itemsToken["$ref"]?.ToObject<string>();
-                        if(itemsToken["type"] != null) pro.Type += "/" + itemsToken["type"]?.ToObject<string>();
+                        if (itemsToken["type"] != null) pro.Type += "/" + itemsToken["type"]?.ToObject<string>();
                     }
 
                     schemaObject.Properties.Add(pro);
@@ -65,12 +77,12 @@ public class SchemaObjectConverter : JsonConverter<SchemaObject>
 
             if (jObject.TryGetValue("items", out JToken itemsToken1))
             {
-                if(itemsToken1 != null)
+                if (itemsToken1 != null)
                 {
                     schemaObject.NameParameter = itemsToken1["name"]?.ToObject<string>();
                     schemaObject.Ref = itemsToken1["$ref"]?.ToObject<string>();
                     schemaObject.Type = String.Join("/", itemsToken1["type"]?.ToObject<string>());
-                }    
+                }
             }
         }
 
@@ -97,6 +109,9 @@ public class SchemaObjectConverter : JsonConverter<SchemaObject>
                 writer.WriteValue(value.Format);
             }
         }
+
+        writer.WritePropertyName("type");
+        writer.WriteValue(value.Type);
 
         writer.WriteEndObject();
     }
@@ -149,13 +164,34 @@ public class SwaggerV2
             {
                 var p = new SchemaObject();
                 p = JsonConvert.DeserializeObject<SchemaObject>(schema.Value.ToString());
-                
+
                 //get name
-                if(p.Xml != null)
+                if (p.Xml != null)
                 {
                     var xmlObject = JObject.Parse(p.Xml.ToString());
                     p.Name = xmlObject["name"].ToString();
                 }
+
+                if(p.Properties != null)
+                {
+                    var jtoken = JToken.FromObject(schema.Value);
+
+                    foreach (var property in p.Properties)
+                    {
+
+                        if (property.Type == "string")
+                        {
+                            property.Min = jtoken["properties"][property.Name]["minLength"]?.ToString();
+                            property.Max = jtoken["properties"][property.Name]["maxLength"]?.ToString();
+                        }
+                        else
+                        {
+                            property.Min = jtoken["properties"][property.Name]["minimum"]?.ToString();
+                            property.Max = jtoken["properties"][property.Name]["maximum"]?.ToString();
+                        }
+                    }
+                }
+                    
 
                 p.NameParameter = schema.Key;
                 lschema.Add(p);
@@ -194,6 +230,8 @@ public class SchemaObject
     public string Ref { get; set; }
     public string Format { get; set; }
     public object Xml { get; set; }
+    public string Min { get; set; }
+    public string Max { get; set; }
 
     public List<Property> Properties { get; set; }
     public List<string> Required { get; set; }
@@ -210,10 +248,8 @@ public class Property
     public bool Required { get; set; }
     public object Default { get; set; }
     public object Example { get; set; }
-    public int? Minimum { get; set; }
-    public int? Maximum { get; set; }
-    public int? MinLength { get; set; }
-    public int? MaxLength { get; set; }
+    public string Min { get; set; }
+    public string Max { get; set; }
     public string Pattern { get; set; }
     public object Items { get; set; }
     public List<Property> Properties { get; set; }
@@ -230,6 +266,18 @@ class Program
             ""Info"": {},
             ""Host"": ""example.com"",
             ""BasePath"": """",
+            ""definitions"": {
+                ""Product"": {
+                        ""type"": ""object"",
+                  ""properties"": {
+                            ""price"": {
+                                ""type"": ""number"",
+                      ""minimum"": 0,
+                      ""maximum"": 100
+                            }
+                        }
+                    }
+                },
             ""Paths"": {
                 ""/path1"": {
                     ""get"": {
@@ -245,9 +293,11 @@ class Program
                                 ""In"": ""query"",
                                 ""Description"": ""Sample parameter"",
                                 ""Schema"": {
-                                    ""Type"": ""string"",
-                                    ""Format"": ""email"",
+                                    ""type"": ""string"",
+                                    ""format"": ""email"",
                                     ""$ref"": ""#/definitions/Category"",
+                                    ""minLength"": 1,
+                                    ""maxLength"": 100,
                                     ""properties"": {
                                             ""id"": {
                                               ""type"": ""integer"",
@@ -293,7 +343,7 @@ class Program
             }
         }
 
-        var swagger = JsonConvert.DeserializeObject<SwaggerV2>(htmlContent);
+        var swagger = JsonConvert.DeserializeObject<SwaggerV2>(json);
         Path path = (swagger.Paths as List<Path>)[1];
         var outJson = JsonConvert.SerializeObject(swagger);
         Console.WriteLine(outJson);
@@ -317,7 +367,7 @@ class Program
             Console.WriteLine("  Schema Xml: " + parameter.Schema?.Xml);
             Console.WriteLine("  Schema Properties: " + parameter.Schema?.Properties);
             Console.WriteLine("  Schema Required: " + string.Join(", ", parameter.Schema?.Required ?? new List<string>()));
-            
+
         }
 
         var definitions = swagger.Definitions as List<SchemaObject>;
@@ -334,7 +384,7 @@ class Program
             {
                 definition.Properties[i] = Loop(definition.Properties[i], definitions);
             }
-            
+
             Console.WriteLine("  schemaObject Ref: " + definition.Ref);
             Console.WriteLine("-=---------------------------------");
         }
