@@ -321,11 +321,11 @@ class Program
                 }
             }
         }";
-        JsonConvert.DefaultSettings = () => new JsonSerializerSettings
-        {
-            Converters = new List<JsonConverter> { new SchemaObjectConverter() },
-            Formatting = Formatting.Indented
-        };
+        //JsonConvert.DefaultSettings = () => new JsonSerializerSettings
+        //{
+        //    Converters = new List<JsonConverter> { new SchemaObjectConverter() },
+        //    Formatting = Formatting.Indented
+        //};
         string swaggerUiUrl = "https://petstore.swagger.io/v2/swagger.json";
         string htmlContent = null;
         using (HttpClient client = new HttpClient())
@@ -342,8 +342,10 @@ class Program
                 Console.WriteLine($"Error: {ex.Message}");
             }
         }
+        sample(json);
 
         var swagger = JsonConvert.DeserializeObject<SwaggerV2>(json);
+
         Path path = (swagger.Paths as List<Path>)[1];
         var outJson = JsonConvert.SerializeObject(swagger);
         Console.WriteLine(outJson);
@@ -406,5 +408,33 @@ class Program
         }
 
         return property;
+    }
+
+    [JsonDefaultSettings(Formatting = Formatting.Indented, NullValueHandling = NullValueHandling.Ignore)]
+    private static void sample(string json)
+    {
+        var swagger = JsonConvert.DeserializeObject<SwaggerV2>(json);
+    }
+}
+
+[AttributeUsage(AttributeTargets.Method)]
+public class JsonDefaultSettingsAttribute : Attribute
+{
+    // Define properties to hold the desired JSON settings
+    private Formatting formatting;
+    public Formatting Formatting { 
+        get => formatting; 
+        set 
+            => formatting = value;
+    }
+    public NullValueHandling NullValueHandling { get; set; }
+
+    public JsonDefaultSettingsAttribute()
+    {
+        JsonConvert.DefaultSettings = () => new JsonSerializerSettings
+        {
+            Converters = new List<JsonConverter> { new SchemaObjectConverter() },
+            Formatting = Formatting.Indented
+        };
     }
 }
